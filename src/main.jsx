@@ -1,6 +1,7 @@
 import React, { StrictMode, useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createOrder, isSupabaseConfigured } from './lib/supabase'
+import { getDishSuggestion } from './lib/chatbot'
 import './styles.css'
 
 const categories = [
@@ -106,6 +107,12 @@ function App() {
   const [orderId, setOrderId] = useState('')
   const [form, setForm] = useState({ name: '', phone: '', address: '', note: '' })
   const [formErrors, setFormErrors] = useState({})
+  const [showChatbot, setShowChatbot] = useState(false)
+  const [chatInput, setChatInput] = useState('')
+  const [chatLoading, setChatLoading] = useState(false)
+  const [chatMessages, setChatMessages] = useState([
+    { role: 'assistant', text: 'Chào bạn! Mình có thể giúp bạn chọn món theo khẩu vị, ngân sách hoặc thời gian giao hàng nhé.' },
+  ])
 
   const filteredDishes = useMemo(() => {
     const keyword = search.trim().toLowerCase()
@@ -181,6 +188,35 @@ function App() {
     setShowCheckout(true)
     setOrderStatus('idle')
     setOrderError('')
+  }
+
+  const askChatbot = async (event) => {
+    event.preventDefault()
+    const message = chatInput.trim()
+    if (!message || chatLoading) return
+
+    setChatInput('')
+    setChatMessages((current) => [...current, { role: 'user', text: message }])
+    setChatLoading(true)
+    try {
+      const suggestion = await getDishSuggestion(message, dishes)
+      setChatMessages((current) => [...current, {
+        role: 'assistant',
+        text: suggestion.text,
+        dish: suggestion.dish,
+      }])
+    } catch (error) {
+      setChatMessages((current) => [...current, {
+        role: 'assistant',
+        text: error.message || 'Mình chưa thể trả lời lúc này. Bạn thử lại sau nhé.',
+      }])
+    } finally {
+      setChatLoading(false)
+    }
+  }
+
+  const askQuickQuestion = (question) => {
+    setChatInput(question)
   }
 
   return (
@@ -261,6 +297,31 @@ function App() {
       </main>
 
       <button className="floating-cart" onClick={() => setShowCart(true)} type="button"><span>🛍</span><b>{cartCount || 0}</b><strong>Giỏ hàng</strong><em>{formatPrice(subtotal)}</em></button>
+      <button className={`chatbot-toggle ${showChatbot ? 'active' : ''}`} onClick={() => setShowChatbot((current) => !current)} type="button" aria-label="Mở trợ lý chọn món">
+        <span>✦</span><strong>Trợ lý chọn món</strong>
+      </button>
+      {showChatbot && <section className="chatbot-panel" aria-label="Trợ lý chọn món">
+        <div className="chatbot-header">
+          <div><span className="chatbot-avatar">✦</span><div><strong>Bếp Nhà AI</strong><small>Gợi ý món theo khẩu vị của bạn</small></div></div>
+          <button onClick={() => setShowChatbot(false)} type="button" aria-label="Đóng trợ lý">×</button>
+        </div>
+        <div className="chatbot-messages">
+          {chatMessages.map((message, index) => <div className={`chat-message ${message.role}`} key={`${message.role}-${index}`}>
+            <p>{message.text}</p>
+            {message.dish && <button type="button" onClick={() => addToCart(message.dish)}>Thêm {message.dish.name} · {formatPrice(message.dish.price)} <span>+</span></button>}
+          </div>)}
+          {chatLoading && <div className="chat-message assistant"><p className="typing">Đang tìm món hợp với bạn <span>•••</span></p></div>}
+        </div>
+        <div className="quick-prompts">
+          <button type="button" onClick={() => askQuickQuestion('Mình muốn ăn món cay')}>Món cay</button>
+          <button type="button" onClick={() => askQuickQuestion('Gợi ý món dưới 70k')}>Dưới 70k</button>
+          <button type="button" onClick={() => askQuickQuestion('Món nào giao nhanh?')}>Giao nhanh</button>
+        </div>
+        <form className="chatbot-form" onSubmit={askChatbot}>
+          <input value={chatInput} onChange={(event) => setChatInput(event.target.value)} placeholder="Bạn muốn ăn món gì?" aria-label="Tin nhắn cho trợ lý" />
+          <button type="submit" disabled={!chatInput.trim() || chatLoading} aria-label="Gửi tin nhắn">↑</button>
+        </form>
+      </section>}
       {showCart && <div className="cart-overlay" onClick={() => setShowCart(false)} />}
       <aside className={`cart-drawer ${showCart ? 'open' : ''}`}>
         <div className="cart-header"><div><span className="eyebrow">ĐƠN HÀNG CỦA BẠN</span><h2>Giỏ hàng <small>({cartCount} món)</small></h2></div><button onClick={() => setShowCart(false)} type="button">×</button></div>
